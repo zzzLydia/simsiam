@@ -224,26 +224,31 @@ def main_worker(gpu, args):
     cudnn.benchmark = True
 
     # Data loading code
-    traindir = os.path.join(args.data, 'train')
+    traindir_day = os.path.join(args.data, 'train', 'day')
+    traindir_night = os.path.join(args.data, 'train','night')
+    
+    
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
 
     # MoCo v2's aug: similar to SimCLR https://arxiv.org/abs/2002.05709
-    augmentation = [
-        transforms.RandomResizedCrop(224, scale=(0.2, 1.)),
-        transforms.RandomApply([
-            transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)  # not strengthened
-        ], p=0.8),
-        transforms.RandomGrayscale(p=0.2),
-        transforms.RandomApply([simsiam.loader.GaussianBlur([.1, 2.])], p=0.5),
-        transforms.RandomHorizontalFlip(),
-        transforms.ToTensor(),
-        normalize
-    ]
-
-    train_dataset = datasets.ImageFolder(
-        traindir,
-        simsiam.loader.TwoCropsTransform(transforms.Compose(augmentation)))
+#     augmentation = [
+#         transforms.RandomResizedCrop(224, scale=(0.2, 1.)),
+#         transforms.RandomApply([
+#             transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)  # not strengthened
+#         ], p=0.8),
+#         transforms.RandomGrayscale(p=0.2),
+#         transforms.RandomApply([simsiam.loader.GaussianBlur([.1, 2.])], p=0.5),
+#         transforms.RandomHorizontalFlip(),
+#         transforms.ToTensor(),
+#         normalize
+#     ]
+    augmentation = None
+    
+    filename= readlines(fpath.format("train"))
+    
+    train_dataset = datasets.MonoDataset(self.opt, self.opt.data_path, filename)
+    
 
 #     if args.distributed:
 #         train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
@@ -253,6 +258,7 @@ def main_worker(gpu, args):
     train_loader = torch.utils.data.DataLoader(
         train_dataset, batch_size=args.batch_size, shuffle=(train_sampler is None),
         num_workers=args.workers, pin_memory=True, sampler=train_sampler, drop_last=True)
+    
 
     for epoch in range(args.start_epoch, args.epochs):
 #         if args.distributed:
@@ -286,18 +292,24 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
 
 
     end = time.time()
-    for i, (images, _) in enumerate(train_loader):
+    for i, input in enumerate(train_loader):
         # measure data loading time
 
+        
+        inputs["color"] 
+        inputs["color_n"] 
+        
+        
+        
         data_time.update(time.time() - end)
 
         if args.gpu is not None:
-            images[0] = images[0].cuda(args.gpu, non_blocking=True)
-            images[1] = images[1].cuda(args.gpu, non_blocking=True)
+            inputs["color"]  = inputs["color"] .cuda(args.gpu, non_blocking=True)
+            inputs["color_n"]  = inputs["color_n"] .cuda(args.gpu, non_blocking=True)
 
         # compute output and loss
   
-        p1, p2, z1, z2 = model(x1=images[0], x2=images[1])
+        p1, p2, z1, z2 = model(x1=inputs["color"] , x2=inputs["color_n"])
         loss = -(criterion(p1, z2).mean() + criterion(p2, z1).mean()) * 0.5
 
         losses.update(loss.item(), images[0].size(0))
