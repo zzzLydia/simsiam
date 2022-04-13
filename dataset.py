@@ -12,6 +12,14 @@ from torchvision import transforms
 import matplotlib.pyplot as plt
 
 
+def readlines(filename):
+    """Read all the lines in a text file and return as a list
+    """
+    with open(filename, 'r') as f:
+        lines = f.read().splitlines()
+    return lines
+
+
 def pil_loader(path):
     # open path as file to avoid ResourceWarning
     # (https://github.com/python-pillow/Pillow/issues/835)
@@ -64,13 +72,6 @@ class MonoDataset(data.Dataset):
             self.saturation = 0.2
             self.hue = 0.1
 
-        self.resize = {}
-        for i in range(self.num_scales):
-            s = 2 ** i
-            self.resize[i] = transforms.Resize((self.height // s, self.width // s),
-                                               interpolation=self.interp)
-
-        self.load_depth = True
         
     def get_color(self, folder, frame_index, side, do_flip):
         color = self.loader(self.get_image_path(folder, frame_index, side))
@@ -96,19 +97,19 @@ class MonoDataset(data.Dataset):
         same augmentation.
         """
     #introduce color_aug to input dict
-        for k in list(inputs):
-            frame = inputs[k]
-            if "color" in k or "color_n" in k:
-                n, im, i = k
-                for i in range(self.num_scales):
-                    inputs[(n, im, i)] = self.resize[i](inputs[(n, im, i - 1)])
+#         for k in list(inputs):
+#             frame = inputs[k]
+#             if "color" in k or "color_n" in k:
+#                 n= k
+#                 for i in range(self.num_scales):
+#                     inputs[n] = self.resize[i](inputs[(n, im, i - 1)])
 
         for k in list(inputs):
             f = inputs[k]
             if "color" in k or "color_n" in k:
-                n, im, i = k
-                inputs[(n, im, i)] = self.to_tensor(f)
-                inputs[(n + "_aug", im, i)] = self.to_tensor(color_aug(f))
+                n = k
+                inputs[n] = self.to_tensor(f)
+                inputs[n + "_aug"] = self.to_tensor(color_aug(f))
 
     def __len__(self):
         return len(self.filenames)
@@ -155,17 +156,19 @@ class MonoDataset(data.Dataset):
             else:
                 side = None
                 
-        inputs[("color"] = self.get_color(folder, frame_index, side, do_flip)
-        inputs[("color_n")] = self.get_color(folder2, frame_index, side, do_flip)
+        inputs["color"] = self.get_color(folder, frame_index, side, do_flip)
+        inputs["color_n"] = self.get_color(folder2, frame_index, side, do_flip)
         
         
-#         if do_color_aug:
-#             color_aug = transforms.ColorJitter.get_params(
-#             self.brightness, self.contrast, self.saturation, self.hue)
-#         else:
-#             color_aug = (lambda x: x)
+        do_coloe_aug=False
+        
+        if do_color_aug:
+            color_aug = transforms.ColorJitter.get_params(
+            self.brightness, self.contrast, self.saturation, self.hue)
+        else:
+            color_aug = (lambda x: x)
 
-#         self.preprocess(inputs, color_aug)
+        self.preprocess(inputs, color_aug)
         
         return inputs
                 
