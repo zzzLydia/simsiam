@@ -48,7 +48,7 @@ class MonoDataset(data.Dataset):
 
         self.data_path = data_path
         self.filenames = filenames
-
+        self.is_train=True
         self.interp = Image.ANTIALIAS
 
 #        self.is_train = is_train
@@ -79,8 +79,8 @@ class MonoDataset(data.Dataset):
         # color = color.crop((0, 160, 1280, 960-160))
         # color = color.resize((512, 256),Image.ANTIALIAS)
 
-        if do_flip:
-            color = color.transpose(pil.FLIP_LEFT_RIGHT)
+#         if do_flip:
+#             color = color.transpose(pil.FLIP_LEFT_RIGHT)
 
         return color
       
@@ -88,6 +88,7 @@ class MonoDataset(data.Dataset):
         f_str = "{:010d}{}".format(frame_index, self.img_ext)
         image_path = os.path.join(
             self.data_path, folder, f_str)
+        #print(image_path)
         return image_path
 
     def preprocess(self, inputs, color_aug):
@@ -160,7 +161,7 @@ class MonoDataset(data.Dataset):
         inputs["color_n"] = self.get_color(folder2, frame_index, side, do_flip)
         
         
-        do_coloe_aug=False
+        do_color_aug=False
         
         if do_color_aug:
             color_aug = transforms.ColorJitter.get_params(
@@ -171,11 +172,6 @@ class MonoDataset(data.Dataset):
         self.preprocess(inputs, color_aug)
         
         return inputs
-                
-                
-                
-                
-                
                 
                 
                 
