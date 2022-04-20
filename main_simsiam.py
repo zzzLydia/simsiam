@@ -63,6 +63,8 @@ parser.add_argument('-b', '--batch-size', default=512, type=int,
                     help='mini-batch size (default: 512), this is the total '
                          'batch size of all GPUs on the current node when '
                          'using Data Parallel or Distributed Data Parallel')
+parser.add_argument('--is_train', default=True, 
+                    help='incitial (base) learning rate')
 parser.add_argument('--lr', '--learning-rate', default=0.05, type=float,
                     metavar='LR', help='initial (base) learning rate', dest='lr')
 parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
@@ -133,11 +135,14 @@ def main():
 #         mp.spawn(main_worker, nprocs=ngpus_per_node, args=(ngpus_per_node, args))
 #     else:
 #         # Simply call main_worker function
+    
     main_worker(args.gpu, args)
 
 
 def main_worker(gpu, args):
     args.gpu = gpu
+    
+    
 
     # suppress printing if not master
 #     if args.multiprocessing_distributed and args.gpu != 0:
@@ -159,10 +164,13 @@ def main_worker(gpu, args):
 #                                 world_size=args.world_size, rank=args.rank)
 #         torch.distributed.barrier()
     # create model
-    print("=> creating model '{}'".format(args.arch))
-    model = simsiam.builder.SimSiam(
-        models.__dict__[args.arch],
-        args.dim, args.pred_dim)
+    is_train=args.is_train
+    #print(is_train)
+    if is_train==True:
+        print("=> creating model '{}'".format(args.arch))
+        model = simsiam.builder.SimSiam(
+            models.__dict__[args.arch],
+            args.dim, args.pred_dim)
 
     # infer learning rate before changing batch size
     init_lr = args.lr * args.batch_size / 256
@@ -189,28 +197,29 @@ def main_worker(gpu, args):
 #             model = torch.nn.parallel.DistributedDataParallel(model)
 
     torch.cuda.set_device(args.gpu)
-    model = model.cuda(args.gpu)
-    print(1)
+    if is_train==True:
+        model = model.cuda(args.gpu)
+    #print(1)
         # comment out the following line for debugging
         #raise NotImplementedError("Only DistributedDataParallel is supported.")
 #     else:
 #         # AllGather implementation (batch shuffle, queue update, etc.) in
 #         # this code only supports DistributedDataParallel.
 #         raise NotImplementedError("Only DistributedDataParallel is supported.")
-    print(model) # print model after SyncBatchNorm
+    #print(model) # print model after SyncBatchNorm
 
     # define loss function (criterion) and optimizer
     criterion = nn.CosineSimilarity(dim=1).cuda(args.gpu)
+    if is_train==True:
+        if args.fix_pred_lr:
+            optim_params = [{'params': model.encoder.parameters(), 'fix_lr': False},
+                            {'params': model.predictor.parameters(), 'fix_lr': True}]
+        else:
+            optim_params = model.parameters()
 
-    if args.fix_pred_lr:
-        optim_params = [{'params': model.encoder.parameters(), 'fix_lr': False},
-                        {'params': model.predictor.parameters(), 'fix_lr': True}]
-    else:
-        optim_params = model.parameters()
-
-    optimizer = torch.optim.SGD(optim_params, init_lr,
-                                momentum=args.momentum,
-                                weight_decay=args.weight_decay)
+        optimizer = torch.optim.SGD(optim_params, init_lr,
+                                    momentum=args.momentum,
+                                    weight_decay=args.weight_decay)
 
     # optionally resume from a checkpoint
     if args.resume:
@@ -233,9 +242,9 @@ def main_worker(gpu, args):
     cudnn.benchmark = True
 
     # Data loading code
-    traindir_day = os.path.join(args.data, 'train', 'day')
+#     traindir_day = os.path.join(args.data, 'train', 'day')
     
-    traindir_night = os.path.join(args.data, 'train','night')
+#     traindir_night = os.path.join(args.data, 'train','night')
     
     
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
@@ -254,43 +263,123 @@ def main_worker(gpu, args):
 #         normalize
 #     ]
     augmentation = None
-    
-    
     fpath = os.path.join(os.path.dirname(__file__), "{}_files.txt")
+    
+    train_sampler = None
+    
+    if is_train==True:
+    
+    
     #print(fpath)
     
-    filename= readlines(fpath.format("train"))
+        filename1= readlines(fpath.format("train"))
+        train_dataset = dataset.MonoDataset(args.data, filenames=filename1)
+        train_loader = torch.utils.data.DataLoader(
+        train_dataset, batch_size=args.batch_size, shuffle=(train_sampler is None),
+        num_workers=args.workers, pin_memory=True, drop_last=True)
+    else:
     
-    train_dataset = dataset.MonoDataset(args.data, filename)
+        filename2= readlines(fpath.format("val_day"))
+        eval_dataset = dataset.MonoDataset(args.data, filenames=filename2)
+        eval_loader = torch.utils.data.DataLoader(
+        eval_dataset, batch_size=args.batch_size, shuffle=(train_sampler is None),
+        num_workers=args.workers, pin_memory=True, drop_last=True)
+    
+
     
 
 #     if args.distributed:
 #         train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
 #     else:
-    train_sampler = None
-
-    train_loader = torch.utils.data.DataLoader(
-        train_dataset, batch_size=args.batch_size, shuffle=(train_sampler is None),
-        num_workers=args.workers, pin_memory=True, drop_last=True)
     
+
+
+    
+
+    #if not args.is_train:
+    file = open('result.txt','w')
     for epoch in range(args.start_epoch, args.epochs):
 #         if args.distributed:
 #             train_sampler.set_epoch(epoch)
-        adjust_learning_rate(optimizer, init_lr, epoch, args)
+#         adjust_learning_rate(optimizer, init_lr, epoch, args)
 
         # train for one epoch
-        train(train_loader, model, criterion, optimizer, epoch, args)
-        print(1)
-        
-        
-        if not args.multiprocessing_distributed or (args.multiprocessing_distributed
-                and args.rank % ngpus_per_node == 0):
+        #
+        if args.is_train==True:
+            train(train_loader, model, criterion, optimizer, epoch, args)
             save_checkpoint({
-                'epoch': epoch + 1,
-                'arch': args.arch,
-                'state_dict': model.state_dict(),
-                'optimizer' : optimizer.state_dict(),
-            }, is_best=False, filename='checkpoint_{:04d}.pth.tar'.format(epoch))
+            'epoch': epoch + 1,
+            'arch': args.arch,
+            'state_dict': model.state_dict(),
+            'optimizer' : optimizer.state_dict(),
+        }, is_best=False, filename='checkpoint_{:04d}.pth.tar'.format(epoch))
+        else:
+            
+            loss=evalute(eval_loader, epoch, criterion, args)
+        #print(i)
+            print(loss)
+
+            file.write(loss)
+            file.write('\n')
+#         if not args.multiprocessing_distributed or (args.multiprocessing_distributed
+#                 and args.rank % ngpus_per_node == 0):
+
+#         filename='checkpoint_{:04d}.pth'.format(epoch)
+#         torch.save(model, filename)
+
+def evalute(eva_loader, epoch, criterion, args):
+    loss=0
+    dir='checkpoint_{:04d}.pth.tar'.format(epoch)
+
+    checkpoint = torch.load(dir)
+    test_model = simsiam.builder.SimSiam(models.__dict__['resnet50'])
+    test_model.load_state_dict(checkpoint['state_dict'])
+    
+    encoder=test_model.encoder
+    test_model=None
+    
+    
+    encoder=nn.Sequential(*list(encoder.children())[:-2])
+    encoder.to(args.gpu)
+    
+    for i, inputs in enumerate(eva_loader):
+        with torch.no_grad():
+            
+            print(i)
+            inputs["color"]  = inputs["color"] .cuda(args.gpu, non_blocking=True)
+            inputs["color_n"]  = inputs["color_n"] .cuda(args.gpu, non_blocking=True)
+
+            #print(test_model)
+
+            #print(encoder)
+
+            #print(encoder)
+    #         encoder.avgpool = Identity()
+    #         encoder.fc = Identity()
+            #print(encoder)
+            #print(encoder)
+
+            #print(encoder)
+
+
+            e1=encoder(inputs["color"] )
+            e2=encoder(inputs["color_n"] )
+
+
+            #print(e1.shape)
+            loss+=-criterion(e1,e2).mean() 
+        #loss.update(loss.item(), inputs["color"].size(0))
+        
+    loss/=(i+1)
+    #print(loss)
+    return str(loss)
+
+# class Identity(nn.Module):
+#     def __init__(self):
+#         super(Identity, self).__init__()
+        
+#     def forward(self, x):
+#         return x       
 
 
 def train(train_loader, model, criterion, optimizer, epoch, args):
