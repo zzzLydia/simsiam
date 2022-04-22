@@ -10,6 +10,8 @@ import torch
 import torch.utils.data as data
 from torchvision import transforms
 import matplotlib.pyplot as plt
+import torchvision.transforms.functional as F
+import random
 
 
 def readlines(filename):
@@ -26,6 +28,32 @@ def pil_loader(path):
     with open(path, 'rb') as f:
         with Image.open(f) as img:
             return img.convert('RGB')
+        
+def random_list():
+    paralist=[]
+    paralist.append(random.uniform(0.8, 1.2))
+    paralist.append(random.uniform(0.8, 1.2))
+    paralist.append(random.uniform(0.8, 1.2))
+    paralist.append(random.uniform(-0.1,0.1))
+    
+    return paralist
+
+
+class New_jitter:
+
+
+    def __init__(self,para_list):
+        self.bright=para_list[0]
+        self.contrast=para_list[1]
+        self.satur=para_list[2]
+        self.hue=para_list[3]
+
+    def __call__(self, x):
+        x = F.adjust_brightness(x, self.bright)
+        x = F.adjust_contrast(x, self.contrast)
+        x = F.adjust_saturation(x, self.satur)
+        x = F.adjust_hue(x, self.hue)
+        return x
 
 
 class MonoDataset(data.Dataset):
@@ -60,18 +88,19 @@ class MonoDataset(data.Dataset):
 # transform
         # We need to specify augmentations differently in newer versions of torchvision.
         # We first try the newer tuple version; if this fails we fall back to scalars
-        try:
-            self.brightness = (0.8, 1.2)
-            self.contrast = (0.8, 1.2)
-            self.saturation = (0.8, 1.2)
-            self.hue = (-0.1, 0.1)
-            transforms.ColorJitter.get_params(
-                self.brightness, self.contrast, self.saturation, self.hue)
-        except TypeError:
-            self.brightness = 0.2
-            self.contrast = 0.2
-            self.saturation = 0.2
-            self.hue = 0.1
+#         try:
+#             self.brightness = (0.8, 1.2)
+#             self.contrast = (0.8, 1.2)
+#             self.saturation = (0.8, 1.2)
+#             self.hue = (-0.1, 0.1)
+#             transforms.ColorJitter.get_params(
+#                 self.brightness, self.contrast, self.saturation, self.hue)
+            
+#         except TypeError:
+#             self.brightness = 0.2
+#             self.contrast = 0.2
+#             self.saturation = 0.2
+#             self.hue = 0.1
 
         
     def get_color(self, folder, frame_index, do_flip):
@@ -91,7 +120,7 @@ class MonoDataset(data.Dataset):
         #print(image_path)
         return image_path
 
-    def preprocess(self, inputs, color_aug):
+    def preprocess(self, inputs, do_color_aug):
         """Resize colour images to the required scales and augment if required
         We create the color_aug object in advance and apply the same augmentation to all
         images in this item. This ensures that all images input to the pose network receive the
@@ -103,14 +132,45 @@ class MonoDataset(data.Dataset):
 #             if "color" in k or "color_n" in k:
 #                 n= k
 #                 for i in range(self.num_scales):
-#                     inputs[n] = self.resize[i](inputs[(n, im, i - 1)])
+    #                     inputs[n] = self.resize[i](inputs[(n, im, i - 1)])
+        if do_color_aug:
 
-        for k in list(inputs):
-            f = inputs[k]
-            if "color" in k or "color_n" in k:
-                n = k
-                inputs[n] = self.to_tensor(f)
-                inputs[n + "_aug"] = self.to_tensor(color_aug(f))
+#             color_aug = transforms.ColorJitter(
+#             self.brightness, self.contrast, self.saturation, self.hue)
+            para_list=random_list()
+            color_aug=New_jitter(para_list)
+    
+
+            #print(color_aug)
+        else:
+            color_aug = (lambda x: x)
+            
+        #print(inputs)
+        #print('--------------')
+#         inputs['color'] = self.to_tensor(inputs['color'])
+#         inputs['color_n'] = self.to_tensor(inputs['color_n'])
+#         inputs['color'+'aug'] = self.to_tensor(color_aug(inputs['color']))
+#         inputs['color_n'+'aug'] = self.to_tensor(color_aug(inputs['color_n']))
+        inputs['color'] = self.to_tensor(inputs['color'])
+        inputs['color_n'] = self.to_tensor(inputs['color_n'])
+        #print(color_aug(inputs['color']).type)
+#         inputs['color'+'_aug'] = self.to_tensor(color_aug(inputs['color']))
+#         inputs['color_n'+'_aug'] = self.to_tensor(color_aug(inputs['color_n']))
+        inputs['color'+'_aug'] = color_aug(inputs['color'])
+        inputs['color_n'+'_aug'] = color_aug(inputs['color_n'])
+    
+        #print(inputs)
+        #print('------------------------------------------')
+#         for k in list(inputs):
+            
+
+#             f = inputs[k]
+
+#             if "color" in k or "color_n" in k:
+#                 n = k
+#                 inputs[n] = self.to_tensor(f)
+#                 #print(color_aug)
+#                 inputs[n + "_aug"] = self.to_tensor(color_aug(f))
 
     def __len__(self):
         return len(self.filenames)
@@ -160,21 +220,25 @@ class MonoDataset(data.Dataset):
         inputs["color"] = self.get_color(folder, frame_index, do_flip)
         inputs["color_n"] = self.get_color(folder2, frame_index, do_flip)
 
-        if do_color_aug:
-            color_aug = transforms.ColorJitter.get_params(
-            self.brightness, self.contrast, self.saturation, self.hue)
-            print(color_aug)
-        else:
-            color_aug = (lambda x: x)
+#         if do_color_aug:
 
-        self.preprocess(inputs, color_aug)
+# #             color_aug = transforms.ColorJitter(
+# #             self.brightness, self.contrast, self.saturation, self.hue)
+#             para_list=random_list()
+#             color_aug=New_jitter(para_list)
+    
+
+#             #print(color_aug)
+#         else:
+#             color_aug = (lambda x: x)
+
+        #self.preprocess(inputs, color_aug)
+        self.preprocess(inputs, do_color_aug)
            
 
 
  
         return inputs
-                
-                
                 
                 
                 
