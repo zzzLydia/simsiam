@@ -164,9 +164,10 @@ def main_worker(gpu, args):
 #                                 world_size=args.world_size, rank=args.rank)
 #         torch.distributed.barrier()
     # create model
+#     print(args.is_train)
     is_train=args.is_train
-    #print(is_train)
-    if is_train==True:
+#     print(is_train)
+    if is_train:
         print("=> creating model '{}'".format(args.arch))
         model = simsiam.builder.SimSiam(
             models.__dict__[args.arch],
@@ -197,7 +198,7 @@ def main_worker(gpu, args):
 #             model = torch.nn.parallel.DistributedDataParallel(model)
 
     torch.cuda.set_device(args.gpu)
-    if is_train==True:
+    if is_train:
         model = model.cuda(args.gpu)
     #print(1)
         # comment out the following line for debugging
@@ -210,7 +211,7 @@ def main_worker(gpu, args):
 
     # define loss function (criterion) and optimizer
     criterion = nn.CosineSimilarity(dim=1).cuda(args.gpu)
-    if is_train==True:
+    if is_train:
         if args.fix_pred_lr:
             optim_params = [{'params': model.encoder.parameters(), 'fix_lr': False},
                             {'params': model.predictor.parameters(), 'fix_lr': True}]
@@ -267,20 +268,20 @@ def main_worker(gpu, args):
     
     train_sampler = None
     
-    if is_train==True:
+    if is_train:
     
     
     #print(fpath)
     
         filename1= readlines(fpath.format("train"))
-        train_dataset = dataset.MonoDataset(args.data, filenames=filename1)
+        train_dataset = dataset.MonoDataset(args.data, filenames=filename1, is_train=True)
         train_loader = torch.utils.data.DataLoader(
         train_dataset, batch_size=args.batch_size, shuffle=(train_sampler is None),
         num_workers=args.workers, pin_memory=True, drop_last=True)
     else:
     
         filename2= readlines(fpath.format("val_day"))
-        eval_dataset = dataset.MonoDataset(args.data, filenames=filename2)
+        eval_dataset = dataset.MonoDataset(args.data, filenames=filename2, is_train=False)
         eval_loader = torch.utils.data.DataLoader(
         eval_dataset, batch_size=args.batch_size, shuffle=(train_sampler is None),
         num_workers=args.workers, pin_memory=True, drop_last=True)
@@ -298,6 +299,7 @@ def main_worker(gpu, args):
 
     #if not args.is_train:
     file = open('result.txt','w')
+    
     for epoch in range(args.start_epoch, args.epochs):
 #         if args.distributed:
 #             train_sampler.set_epoch(epoch)
@@ -305,16 +307,19 @@ def main_worker(gpu, args):
 
         # train for one epoch
         #
-        if args.is_train==True:
+        #print(is_train)
+        
+        
+        if is_train:
+            #print(1)
             train(train_loader, model, criterion, optimizer, epoch, args)
             save_checkpoint({
             'epoch': epoch + 1,
             'arch': args.arch,
             'state_dict': model.state_dict(),
-            'optimizer' : optimizer.state_dict(),
-        }, is_best=False, filename='checkpoint_{:04d}.pth.tar'.format(epoch))
+            'optimizer' : optimizer.state_dict(),}, is_best=False, filename='checkpoint_{:04d}.pth.tar'.format(epoch))
         else:
-            
+            #print(2)
             loss=evalute(eval_loader, epoch, criterion, args)
         #print(i)
             print(loss)
@@ -403,15 +408,15 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
         data_time.update(time.time() - end)
 
         if args.gpu is not None:
-            inputs["color"]  = inputs["color"] .cuda(args.gpu, non_blocking=True)
-            inputs["color_n"]  = inputs["color_n"] .cuda(args.gpu, non_blocking=True)
+            inputs["color_aug"]  = inputs["color_aug"] .cuda(args.gpu, non_blocking=True)
+            inputs["color_n_aug"]  = inputs["color_n_aug"] .cuda(args.gpu, non_blocking=True)
             
         # compute output and loss
   
-        p1, p2, z1, z2 = model(x1=inputs["color"] , x2=inputs["color_n"])
+        p1, p2, z1, z2 = model(x1=inputs["color_aug"] , x2=inputs["color_n_aug"])
         loss = -(criterion(p1, z2).mean() + criterion(p2, z1).mean()) * 0.5
 
-        losses.update(loss.item(), inputs["color"].size(0))
+        losses.update(loss.item(), inputs["color_aug"].size(0))
 
         # compute gradient and do SGD step
         optimizer.zero_grad()
